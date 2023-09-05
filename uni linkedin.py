@@ -1,0 +1,750 @@
+import re
+import requests
+from bs4 import BeautifulSoup
+import openpyxl
+import requests
+import re
+from bs4 import BeautifulSoup
+from urllib.parse import quote
+import webbrowser
+from selenium import webdriver
+import os
+import time
+from selenium.webdriver.support.wait import WebDriverWait
+import json
+from urllib.parse import urljoin
+import whois
+
+def extract_social_media_links(url):
+    # Send a GET request to the company's website
+    response = requests.get(url)
+    
+    # Parse the HTML content using BeautifulSoup
+    soup = BeautifulSoup(response.text, 'html.parser')
+    
+    # Initialize variables to store the last link for each social media platform
+    last_facebook_link = None
+    last_instagram_link = None
+    last_twitter_link = None
+    last_youtube_link = None
+    last_linkedin_link = None
+    
+    # Search for Facebook links
+    facebook_links = soup.find_all(href=re.compile(r'facebook\.com'))
+    if facebook_links:
+        last_facebook_link = facebook_links[-1]['href']
+    
+    # Search for Instagram links
+    instagram_links = soup.find_all(href=re.compile(r'instagram\.com'))
+    if instagram_links:
+        last_instagram_link = instagram_links[-1]['href']
+    
+    # Search for Twitter links
+    twitter_links = soup.find_all(href=re.compile(r'twitter\.com'))
+    if twitter_links:
+        last_twitter_link = twitter_links[-1]['href']
+        
+    # Search for Youtube links
+    youtube_links = soup.find_all(href=re.compile(r'youtube\.com'))
+    if youtube_links:
+        last_youtube_link = youtube_links[-1]['href']
+        
+    # Search for Linkedin links
+    linkedin_links = soup.find_all(href=re.compile(r'linkedin\.com'))
+    if linkedin_links:
+        last_linkedin_link = linkedin_links[-1]['href']
+    
+    # Create a dictionary to store the last social media links
+    last_social_media_links = {
+        'facebook': last_facebook_link,
+        'instagram': last_instagram_link,
+        'twitter': last_twitter_link,
+        'youtube': last_youtube_link,
+        'linkedin': last_linkedin_link
+    }
+    
+    return last_social_media_links
+
+def extract_contact_details(url):
+    response = requests.get(url)
+    soup = BeautifulSoup(response.content, 'html.parser')
+    contact_details = {}
+
+    # Extract phone numbers
+    phone_numbers = re.findall(r'\b(?:\+?(\d{1,3}))?[-. (]*(\d{3})[-. )]*(\d{3})[-. ]*(\d{4})\b', response.text)
+    contact_details['phone_numbers'] = [''.join(number) for number in phone_numbers]
+
+    # Extract email addresses
+    email_addresses = re.findall(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', response.text)
+    contact_details['email_addresses'] = email_addresses
+
+    return contact_details
+
+def get_contact_details(url):
+    response = requests.get(url)
+    soup = BeautifulSoup(response.content, 'html.parser')
+
+    # Find links to About Us or Contact Us pages
+    contact_link = None
+
+    for link in soup.find_all('a'):
+        href = link.get('href')
+        if href and ('contact' in href.lower() or 'contactus' in href.lower()):
+            contact_link = href
+
+    if contact_link:
+        contact_url = urljoin(url, contact_link)
+        contact_details = extract_contact_details(contact_url)
+        if contact_details['phone_numbers'] or contact_details['email_addresses']:
+            return contact_details
+
+    return None
+
+# Define technology patterns and associated metadata
+technology_patterns = {
+    'WordPress': {
+        'pattern': r'wp-content|wp-json|wordpress',
+        'category': 'Content Management System',
+    },
+    'Joomla': {
+        'pattern': r'joomla',
+        'category': 'Content Management System',
+    },
+    'Drupal': {
+        'pattern': r'drupal|sites\/all',
+        'category': 'Content Management System',
+    },
+    'Magento': {
+        'pattern': r'magento',
+        'category': 'E-commerce',
+    },
+    'Shopify': {
+        'pattern': r'shopify',
+        'category': 'E-commerce',
+    },
+    'WooCommerce': {
+        'pattern': r'woocommerce',
+        'category': 'E-commerce',
+    },
+    'React': {
+        'pattern': r'react',
+        'category': 'JavaScript Framework',
+    },
+    'Angular': {
+        'pattern': r'angular',
+        'category': 'JavaScript Framework',
+    },
+    'Vue.js': {
+        'pattern': r'vue\.js',
+        'category': 'JavaScript Framework',
+    },
+    'Node.js': {
+        'pattern': r'node\.js',
+        'category': 'Server-Side JavaScript',
+    },
+    'Ruby on Rails': {
+        'pattern': r'ruby on rails|rails',
+        'category': 'Web Framework',
+    },
+    'Django': {
+        'pattern': r'django',
+        'category': 'Web Framework',
+    },
+    'Laravel': {
+        'pattern': r'laravel',
+        'category': 'Web Framework',
+    },
+    'Bootstrap': {
+        'pattern': r'bootstrap',
+        'category': 'Front-End Framework',
+    },
+    'jQuery': {
+        'pattern': r'jquery',
+        'category': 'JavaScript Library',
+    },
+    'TensorFlow': {
+        'pattern': r'tensorflow',
+        'category': 'Machine Learning',
+    },
+    'PyTorch': {
+        'pattern': r'pytorch',
+        'category': 'Machine Learning',
+    },
+    'Flask': {
+        'pattern': r'flask',
+        'category': 'Python Web Framework',
+    },
+    'Express.js': {
+        'pattern': r'express\.js',
+        'category': 'JavaScript Web Framework',
+    },
+    'ASP.NET': {
+        'pattern': r'asp\.net',
+        'category': 'Web Framework',
+    },
+    'Java Servlet': {
+        'pattern': r'javax\.servlet',
+        'category': 'Java Web Technology',
+    },
+    'Ruby': {
+        'pattern': r'ruby',
+        'category': 'Programming Language',
+    },
+    'Go': {
+        'pattern': r'golang|go-lang',
+        'category': 'Programming Language',
+    },
+    'MongoDB': {
+        'pattern': r'mongodb',
+        'category': 'Database',
+    },
+    'MySQL': {
+        'pattern': r'mysql',
+        'category': 'Database',
+    },
+    'PostgreSQL': {
+        'pattern': r'postgresql|postgres',
+        'category': 'Database',
+    },
+    'AWS': {
+        'pattern': r'aws\.amazon|amazon web services',
+        'category': 'Cloud Services',
+    },
+    'Google Cloud': {
+        'pattern': r'google cloud|gcp',
+        'category': 'Cloud Services',
+    },
+    'Heroku': {
+        'pattern': r'heroku',
+        'category': 'Platform as a Service',
+    },
+    'Firebase': {
+        'pattern': r'firebase',
+        'category': 'Backend as a Service',
+    },
+    'Elasticsearch': {
+        'pattern': r'elasticsearch',
+        'category': 'Search Engine',
+    },
+    'Redis': {
+        'pattern': r'redis',
+        'category': 'In-Memory Data Store',
+    },
+    'Apache': {
+        'pattern': r'apache',
+        'category': 'Web Server',
+    },
+    'Nginx': {
+        'pattern': r'nginx',
+        'category': 'Web Server',
+    },
+    'Docker': {
+        'pattern': r'docker',
+        'category': 'Containerization',
+    },
+    'Kubernetes': {
+        'pattern': r'kubernetes',
+        'category': 'Container Orchestration',
+    },
+    'Swift': {
+        'pattern': r'swift',
+        'category': 'iOS Development',
+    },
+    'Android': {
+        'pattern': r'android',
+        'category': 'Android Development',
+    },
+    'Unity': {
+        'pattern': r'unity',
+        'category': 'Game Development',
+    },
+    'Adobe Photoshop': {
+        'pattern': r'adobe photoshop|photoshop',
+        'category': 'Graphic Design',
+    },
+    'Adobe Illustrator': {
+        'pattern': r'adobe illustrator|illustrator',
+        'category': 'Graphic Design',
+    },
+    'Microsoft Office': {
+        'pattern': r'microsoft office',
+        'category': 'Productivity Suite',
+    },
+    'Google Workspace': {
+        'pattern': r'google workspace',
+        'category': 'Productivity Suite',
+    },
+    'Git': {
+        'pattern': r'git',
+        'category': 'Version Control System',
+    },
+    'Bitbucket': {
+        'pattern': r'bitbucket',
+        'category': 'Code Collaboration Platform',
+    },
+    'Jenkins': {
+        'pattern': r'jenkins',
+        'category': 'Continuous Integration and Continuous Deployment',
+    },
+    'Travis CI': {
+        'pattern': r'travis ci|travis-ci',
+        'category': 'Continuous Integration and Continuous Deployment',
+    },
+    'CircleCI': {
+        'pattern': r'circle ci|circleci',
+        'category': 'Continuous Integration and Continuous Deployment',
+    },
+    'Ansible': {
+        'pattern': r'ansible',
+        'category': 'Infrastructure Automation',
+    },
+    'Terraform': {
+        'pattern': r'terraform',
+        'category': 'Infrastructure as Code',
+    },
+    'Apache Kafka': {
+        'pattern': r'apache kafka|kafka',
+        'category': 'Distributed Streaming Platform',
+    },
+    'GraphQL': {
+        'pattern': r'graphql',
+        'category': 'Query Language for APIs',
+    },
+    'REST': {
+        'pattern': r'rest|restful',
+        'category': 'API Design',
+    },
+    'OAuth': {
+        'pattern': r'oauth',
+        'category': 'Authentication Protocol',
+    },
+    'JWT': {
+        'pattern': r'jwt',
+        'category': 'Authentication Token',
+    },
+    'OAuth2': {
+        'pattern': r'oauth2',
+        'category': 'Authentication Protocol',
+    },
+    'Swagger': {
+        'pattern': r'swagger',
+        'category': 'API Documentation',
+    },
+    'OpenAPI': {
+        'pattern': r'openapi',
+        'category': 'API Specification',
+    },
+    'Selenium': {
+        'pattern': r'selenium',
+        'category': 'Automated Browser Testing',
+    },
+    'Cucumber': {
+        'pattern': r'cucumber',
+        'category': 'Behavior-Driven Development',
+    },
+    'JUnit': {
+        'pattern': r'junit',
+        'category': 'Java Unit Testing Framework',
+    },
+    'Pytest': {
+        'pattern': r'pytest',
+        'category': 'Python Testing Framework',
+    },
+    'Jest': {
+        'pattern': r'jest',
+        'category': 'JavaScript Testing Framework',
+    },
+    'Mocha': {
+        'pattern': r'mocha',
+        'category': 'JavaScript Testing Framework',
+    },
+    'PHPUnit': {
+        'pattern': r'phpunit',
+        'category': 'PHP Testing Framework',
+    },
+    'C#': {
+        'pattern': r'c#',
+        'category': 'Programming Language',
+    },
+    'VB.NET': {
+        'pattern': r'vb\.net',
+        'category': 'Programming Language',
+    },
+    'Rust': {
+        'pattern': r'rust',
+        'category': 'Programming Language',
+    },
+    'Hadoop': {
+        'pattern': r'hadoop',
+        'category': 'Big Data Processing',
+    },
+    'Apache Spark': {
+        'pattern': r'apache spark|spark',
+        'category': 'Big Data Processing',
+    },
+    'Tableau': {
+        'pattern': r'tableau',
+        'category': 'Data Visualization',
+    },
+    'Power BI': {
+        'pattern': r'power bi',
+        'category': 'Data Visualization',
+    },
+    'Eclipse': {
+        'pattern': r'eclipse',
+        'category': 'Integrated Development Environment',
+    },
+    'Visual Studio Code': {
+        'pattern': r'visual studio code|vs code',
+        'category': 'Integrated Development Environment',
+    },
+    'Atom': {
+        'pattern': r'atom',
+        'category': 'Text Editor',
+    },
+    'Sublime Text': {
+        'pattern': r'sublime text',
+        'category': 'Text Editor',
+    },
+    'Adobe Premiere Pro': {
+        'pattern': r'adobe premiere pro|premiere pro',
+        'category': 'Video Editing',
+    },
+    'Final Cut Pro': {
+        'pattern': r'final cut pro',
+        'category': 'Video Editing',
+    },
+    'AutoCAD': {
+        'pattern': r'autocad',
+        'category': 'Computer-Aided Design',
+    },
+    'MATLAB': {
+        'pattern': r'matlab',
+        'category': 'Numerical Computing',
+    },
+    'Unreal Engine': {
+        'pattern': r'unreal engine',
+        'category': 'Game Development',
+    },
+    'Adobe After Effects': {
+        'pattern': r'adobe after effects|after effects',
+        'category': 'Motion Graphics',
+    },
+    'Blender': {
+        'pattern': r'blender',
+        'category': '3D Modeling and Animation',
+    },
+    'Arduino': {
+        'pattern': r'arduino',
+        'category': 'Hardware Programming',
+    },
+    'Raspberry Pi': {
+        'pattern': r'raspberry pi',
+        'category': 'Single-Board Computer',
+    },
+    'WordPress Plugin': {
+    'pattern': r'wp-content/plugins',
+    'category': 'WordPress Plugin',
+    },
+    'Drupal Module': {
+        'pattern': r'drupal\/modules',
+        'category': 'Drupal Module',
+    },
+    'Node.js Frameworks': {
+        'pattern': r'express|koa|hapi|sails',
+        'category': 'Node.js Framework',
+    },
+    'Ruby Gems': {
+        'pattern': r'gemfile',
+        'category': 'Ruby Gem',
+    },
+    'Python Packages': {
+        'pattern': r'requirements\.txt',
+        'category': 'Python Package',
+    },
+    'Java Frameworks': {
+        'pattern': r'spring|struts|javaee',
+        'category': 'Java Framework',
+    },
+    '.NET Framework': {
+        'pattern': r'\.net|dotnet',
+        'category': '.NET Framework',
+    },
+    'Vue.js UI Frameworks': {
+        'pattern': r'vuetify|quasar|element ui',
+        'category': 'Vue.js UI Framework',
+    },
+    'Front-End Libraries': {
+        'pattern': r'react-dom|angular|vue',
+        'category': 'Front-End Library',
+    },
+    'PHP Frameworks': {
+        'pattern': r'laravel|codeigniter|symfony|cakephp',
+        'category': 'PHP Framework',
+    },
+    'JavaScript Bundlers': {
+        'pattern': r'webpack|rollup|parcel|gulp',
+        'category': 'JavaScript Bundler',
+    },
+    'Mobile App Development': {
+        'pattern': r'react native|flutter|ionic|cordova',
+        'category': 'Mobile App Development',
+    },
+    'NoSQL Databases': {
+        'pattern': r'mongodb|cassandra|couchbase',
+        'category': 'NoSQL Database',
+    },
+    'SQL Server': {
+        'pattern': r'sql server',
+        'category': 'Database',
+    },
+    'GraphQL Libraries': {
+        'pattern': r'apollo|graphql-js',
+        'category': 'GraphQL Library',
+    },
+    'Containerization Tools': {
+        'pattern': r'docker|kubernetes|rkt',
+        'category': 'Containerization Tool',
+    },
+    'Game Engines': {
+        'pattern': r'unity|unreal engine|godot',
+        'category': 'Game Engine',
+    },
+    'Data Science Libraries': {
+        'pattern': r'pandas|numpy|scikit-learn',
+        'category': 'Data Science Library',
+    },
+    'CAD Software': {
+        'pattern': r'autocad|solidworks|fusion 360',
+        'category': 'CAD Software',
+    },
+    'API Gateways': {
+        'pattern': r'kong|tyk|apigee',
+        'category': 'API Gateway',
+    },
+    'UI/UX Design Tools': {
+        'pattern': r'sketch|figma|invision',
+        'category': 'UI/UX Design Tool',
+    },
+    'React Native': {
+        'pattern': r'react native',
+        'category': 'Mobile App Development',
+    },
+    'Flutter': {
+        'pattern': r'flutter',
+        'category': 'Mobile App Development',
+    },
+    'Ionic': {
+        'pattern': r'ionic',
+        'category': 'Mobile App Development',
+    },
+    'Cordova': {
+        'pattern': r'cordova',
+        'category': 'Mobile App Development',
+    },
+    'GraphQL-JS': {
+        'pattern': r'graphql-js',
+        'category': 'GraphQL Library',
+    },
+    'Apollo Client': {
+        'pattern': r'apollo client',
+        'category': 'GraphQL Library',
+    },
+    'Docker Compose': {
+        'pattern': r'docker-compose',
+        'category': 'Container Orchestration',
+    },
+    'RKT': {
+        'pattern': r'rkt',
+        'category': 'Containerization Tool',
+    },
+    'Godot': {
+        'pattern': r'godot',
+        'category': 'Game Engine',
+    },
+    'Pandas': {
+        'pattern': r'pandas',
+        'category': 'Data Science Library',
+    },
+    'NumPy': {
+        'pattern': r'numpy',
+        'category': 'Data Science Library',
+    },
+    'scikit-learn': {
+        'pattern': r'scikit-learn',
+        'category': 'Data Science Library',
+    },
+    'Fusion 360': {
+        'pattern': r'fusion 360',
+        'category': 'CAD Software',
+    },
+    'Kong': {
+        'pattern': r'kong',
+        'category': 'API Gateway',
+    },
+    'Tyk': {
+        'pattern': r'tyk',
+        'category': 'API Gateway',
+    },
+    'Apigee': {
+        'pattern': r'apigee',
+        'category': 'API Gateway',
+    },
+    'Sketch': {
+        'pattern': r'sketch',
+        'category': 'UI/UX Design Tool',
+    },
+    'Figma': {
+        'pattern': r'figma',
+        'category': 'UI/UX Design Tool',
+    },
+    'InVision': {
+        'pattern': r'invision',
+        'category': 'UI/UX Design Tool',
+    },
+    'Kotlin': {
+        'pattern': r'kotlin',
+        'category': 'Programming Language',
+    },
+    'RabbitMQ': {
+        'pattern': r'rabbitmq',
+        'category': 'Message Broker',
+    },
+
+    'Apache Solr': {
+        'pattern': r'apache solr',
+        'category': 'Search Engine',
+    },
+
+    'Memcached': {
+        'pattern': r'memcached',
+        'category': 'In-Memory Data Store',
+    },
+    'Apache Cassandra': {
+        'pattern': r'apache cassandra',
+        'category': 'NoSQL Database',
+    },
+    'Elixir': {
+        'pattern': r'elixir',
+        'category': 'Programming Language',
+    },
+    'VuePress': {
+        'pattern': r'vuepress',
+        'category': 'Static Site Generator',
+    },
+    'Kafka Streams': {
+        'pattern': r'kafka streams',
+        'category': 'Stream Processing',
+    },
+    'Elastic Stack': {
+        'pattern': r'elastic stack',
+        'category': 'Data Analytics',
+    },
+    'Salesforce': {
+        'pattern': r'salesforce',
+        'category': 'Customer Relationship Management',
+    },
+    'Salesforce Service Cloud': {
+        'pattern': r'salesforce service cloud',
+        'category': 'Customer Service',
+    },
+    'Salesforce Marketing Cloud Email Studio': {
+        'pattern': r'salesforce marketing cloud email studio',
+        'category': 'Marketing Automation',
+    },
+    'Salesforce Marketing Cloud Account Engagement': {
+        'pattern': r'salesforce marketing cloud account engagement',
+        'category': 'Marketing Automation',
+    },
+    'Salesforce Interaction Studio': {
+        'pattern': r'salesforce interaction studio',
+        'category': 'Customer Engagement',
+    },
+    'Salesforce Desk': {
+        'pattern': r'salesforce desk',
+        'category': 'Customer Support',
+    },
+    'Salesforce Commerce Cloud': {
+        'pattern': r'salesforce commerce cloud',
+        'category': 'E-commerce',
+    },
+    'Salesforce Audience Studio': {
+        'pattern': r'salesforce audience studio',
+        'category': 'Audience Management',
+    },
+}
+
+def detect_technologies(url):
+    try:
+        response = requests.get(url)
+        response.raise_for_status()  # Raise an exception for HTTP errors
+        html_content = response.text
+
+        detected_technologies = []
+
+        # Parse HTML content
+        soup = BeautifulSoup(html_content, 'html.parser')
+
+        # Iterate through technology patterns
+        for technology, tech_data in technology_patterns.items():
+            pattern = tech_data['pattern']
+            category = tech_data['category']
+
+            if re.search(pattern, str(soup), re.IGNORECASE):
+                detected_technologies.append({
+                    'technology': technology,
+                    'category': category
+                })
+
+        return detected_technologies
+    except requests.exceptions.RequestException:
+        print("Exception")
+        return []
+
+def main():
+    # Load the Excel workbook
+    wb = openpyxl.load_workbook('C:\\Users\\User\\Desktop\\uni.xlsx')
+    sh1 = wb['Sheet1']
+
+    # Iterate through the rows
+    for x in range(2, sh1.max_row + 1):
+        url_data = sh1.cell(x, 3).value
+        if url_data:
+            cname = url_data
+
+            # Extract social media links
+            social_media_links = extract_social_media_links(cname)
+
+            # Extract contact details
+            contact_info = get_contact_details(cname)
+
+            # Get detected technologies
+            detected_technologies = detect_technologies(cname)
+            tech_info = "\n".join([f"Technology: {tech['technology']}, Category: {tech['category']}" for tech in detected_technologies])
+
+            # Update Excel sheet
+            sh1.cell(row=x, column=4, value=tech_info)
+
+            if social_media_links:
+                col = 5  # Starting column for social media links
+                for platform, link in social_media_links.items():
+                    sh1.cell(row=x, column=col, value=link)
+                    col += 1
+
+            if contact_info:
+                unique_phone_numbers = list(set(contact_info['phone_numbers']))
+                unique_email_addresses = list(set(contact_info['email_addresses']))
+
+                if unique_phone_numbers:
+                    sh1.cell(row=x, column=col, value=", ".join(unique_phone_numbers))
+                    col += 1
+
+                if unique_email_addresses:
+                    sh1.cell(row=x, column=col, value=", ".join(unique_email_addresses))
+                    col += 1
+
+    # Save the modified Excel workbook
+    wb.save('C:\\Users\\User\\Desktop\\uni.xlsx')
+
+if __name__ == "__main__":
+    main()
